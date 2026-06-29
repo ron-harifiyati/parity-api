@@ -67,7 +67,7 @@ Member.prototype.invest = async function (amount) {
 
 Member.prototype.payInterest = async function (amount) {
     if (amount <= 0) {
-        res.json({ error: 'Amount must be greater than zero' })
+        throw new Error('Amount must be greater than zero');
     };
     
     if ( amount < this.interestOwing ) {
