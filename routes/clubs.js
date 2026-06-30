@@ -1,7 +1,9 @@
 const { Op } = require('sequelize');
 const express = require('express');
-const { Member, Club } = require('../models/Relationships');
+const { Member, Club, Transaction } = require('../models/Relationships');
 const auth = require('../middleware/authMiddleware');
+const clubAuth = require('../middleware/clubMiddleware');
+const treasurerAuth = require('../middleware/treasurerMiddleware');
 const router = express.Router();
 
 router.use(auth);
@@ -100,7 +102,7 @@ router.get('/:id', async (req, res) => {
 
 // Create a new club
 router.post('/', async (req, res) => {
-    const { title } = req.body;
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays } = req.body;
     if (!title) {
         return res.status(400).json({ error: 'Title is required' })
     }
@@ -108,7 +110,21 @@ router.post('/', async (req, res) => {
     try {
         const club = await Club.create({
             userId: req.user.id,
-            title
+            title,
+            monthlyContribution: monthlyContribution || 25,
+            startDate: startDate || null,
+            paymentDay: paymentDay || 30,
+            autoLoanOnMissedPayment: autoLoanOnMissedPayment !== undefined ? autoLoanOnMissedPayment : true,
+            gracePeriodDays: gracePeriodDays || 1
+        });
+
+        // Automatically add club creator as a member with treasurer role
+        await Member.create({
+            userId: req.user.id,
+            username: req.user.username,
+            email: req.user.email,
+            clubId: club.id,
+            isTreasurer: true
         });
 
         res.status(201).json({ message: 'Club created successfully' })
@@ -120,9 +136,12 @@ router.post('/', async (req, res) => {
 
 // Edit a club
 router.patch('/:id', async (req, res) => {
-    const { title } = req.body;
-    if (!title) {
-        return res.status(400).json({ error: 'Title is required' })
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays } = req.body;
+    
+    // At least one field must be provided
+    if (!title && monthlyContribution === undefined && startDate === undefined && 
+        paymentDay === undefined && autoLoanOnMissedPayment === undefined && gracePeriodDays === undefined) {
+        return res.status(400).json({ error: 'At least one field must be provided' })
     }
 
     try {
@@ -132,12 +151,45 @@ router.patch('/:id', async (req, res) => {
         };
 
         if (club.userId !== req.user.id) {
-            return res.json({ message: 'Not authorized to change name' })
+            return res.json({ message: 'Not authorized to change club settings' })
         }
 
-        club.title = title;
+        // Validate fields
+        if (monthlyContribution !== undefined) {
+            if (monthlyContribution <= 0) {
+                return res.status(400).json({ error: 'Monthly contribution must be greater than 0' });
+            }
+            club.monthlyContribution = monthlyContribution;
+        }
+        
+        if (startDate !== undefined) {
+            club.startDate = startDate;
+        }
+        
+        if (paymentDay !== undefined) {
+            if (paymentDay < 1 || paymentDay > 31) {
+                return res.status(400).json({ error: 'Payment day must be between 1 and 31' });
+            }
+            club.paymentDay = paymentDay;
+        }
+        
+        if (autoLoanOnMissedPayment !== undefined) {
+            club.autoLoanOnMissedPayment = autoLoanOnMissedPayment;
+        }
+        
+        if (gracePeriodDays !== undefined) {
+            if (gracePeriodDays < 0) {
+                return res.status(400).json({ error: 'Grace period days must be at least 0' });
+            }
+            club.gracePeriodDays = gracePeriodDays;
+        }
+
+        if (title !== undefined) {
+            club.title = title;
+        }
+
         await club.save();
-        res.status(200).json({ message: 'Club renamed successfully' })
+        res.status(200).json({ message: 'Club updated successfully' })
     } catch (err) {
         console.log(err);
         res.status(500).json({ error: err.message })
@@ -172,6 +224,100 @@ router.delete('/:id', async (req, res) => {
     } catch (err) {
         console.log(err);
         res.status(500).json({ error: err.message })
+    }
+})
+
+// Check and apply missed payments (treasurer or owner only)
+router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, res) => {
+    try {
+        const club = await Club.findByPk(req.params.id);
+        if (!club) {
+            return res.status(404).json({ error: 'Club not found' });
+        }
+
+        // Calculate previous month period (MM-YYYY format)
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth(); // 0-11
+        
+        let periodYear = currentYear;
+        let periodMonth = currentMonth - 1; // Previous month
+        
+        if (periodMonth < 0) {
+            periodMonth = 11;
+            periodYear--;
+        }
+        
+        const period = `${String(periodMonth + 1).padStart(2, '0')}-${periodYear}`; // MM-YYYY
+        
+        // Calculate due date and grace period end
+        const dueDate = new Date(periodYear, periodMonth + 1, club.paymentDay);
+        const gracePeriodEnd = new Date(dueDate);
+        gracePeriodEnd.setDate(gracePeriodEnd.getDate() + club.gracePeriodDays);
+        
+        // If today is before or on grace period end, can't check yet
+        if (today <= gracePeriodEnd) {
+            return res.json({
+                message: 'Grace period still active for this period',
+                period,
+                dueDate: dueDate.toISOString().split('T')[0],
+                gracePeriodEnd: gracePeriodEnd.toISOString().split('T')[0]
+            });
+        }
+
+        // Find all members in club
+        const members = await Member.findAll({ where: { clubId: club.id } });
+        
+        const missedMembers = [];
+        const loanedMembers = [];
+        
+        for (const member of members) {
+            // Check if member has a transaction for this period
+            const transaction = await Transaction.findOne({
+                where: {
+                    memberId: member.id,
+                    clubId: club.id,
+                    period: period
+                }
+            });
+            
+            if (!transaction) {
+                missedMembers.push(member);
+                
+                // Auto-loan if enabled
+                if (club.autoLoanOnMissedPayment) {
+                    await member.loan(club.monthlyContribution);
+                    
+                    await Transaction.create({
+                        memberId: member.id,
+                        clubId: club.id,
+                        loanAmount: club.monthlyContribution,
+                        investAmount: 0,
+                        interestAmount: 0,
+                        payLoanAmount: 0,
+                        period: period
+                    });
+                    
+                    loanedMembers.push(member);
+                }
+            }
+        }
+
+        res.json({
+            message: 'Missed payments check complete',
+            period,
+            totalMembers: members.length,
+            missedCount: missedMembers.length,
+            loanedCount: loanedMembers.length,
+            loanedMembers: loanedMembers.map(m => ({
+                id: m.id,
+                username: m.username,
+                amount: club.monthlyContribution
+            }))
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message });
     }
 })
 

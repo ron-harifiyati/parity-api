@@ -17,6 +17,10 @@ const Transaction = sequelize.define('Transaction', {
         type: DataTypes.UUID,
         allowNull: false
     },
+    period: {
+        type: DataTypes.STRING,
+        allowNull: false
+    },
 
     investAmount: {
         type: DataTypes.INTEGER,
