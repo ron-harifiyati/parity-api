@@ -119,7 +119,7 @@ The Parity API is a RESTful service that returns JSON.
        }
        ```
 
-    - `DELETE /clubs/:id` Renames an existing club.
+    - `DELETE /clubs/:id` Deletes an existing club.
   
 
 3. **Memeber Management**  

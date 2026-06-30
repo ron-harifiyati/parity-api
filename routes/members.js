@@ -113,7 +113,7 @@ router.patch('/:id', async (req, res) => {
         await Transaction.create({
             memberId: member.id,
             clubId: req.club.id,
-            interestAmount,
+            investAmount,
             interestAmount,
             payLoanAmount,
             loanAmount
