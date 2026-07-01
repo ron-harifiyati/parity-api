@@ -4,12 +4,15 @@ const { Member, Club, Transaction } = require('../models/Relationships');
 const auth = require('../middleware/authMiddleware');
 const clubAuth = require('../middleware/clubMiddleware');
 const treasurerAuth = require('../middleware/treasurerMiddleware');
+const { NotFoundError, AuthorizationError, ValidationError } = require('../utils/errors');
+const { validateStringLength, validatePositiveInteger } = require('../middleware/sanitizationMiddleware');
+
 const router = express.Router();
 
 router.use(auth);
 
 // Get all clubs
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
     try {
         const memberships = await Member.findAll({
             where: { userId: req.user.id },
@@ -54,13 +57,12 @@ router.get('/', async (req, res) => {
 
         res.json(enriched);
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Get one club
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
     try {
         // 1. You must "include" the members to access them later
         const club = await Club.findByPk(req.params.id, {
@@ -68,7 +70,7 @@ router.get('/:id', async (req, res) => {
         });
 
         if (!club) {
-            return res.status(404).json({ message: 'Club not found' });
+            throw new NotFoundError('Club');
         }
 
         // 2. Process the single object (no .map needed)
@@ -95,24 +97,55 @@ router.get('/:id', async (req, res) => {
 
         res.json(enriched);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
+        next(err);
     }
 });
 
 // Create a new club
-router.post('/', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
-    if (!title) {
-        return res.status(400).json({ error: 'Title is required' })
-    }
-
-    // Calculate lending limit: monthlyContribution * durationMonths
-    const finalMonthlyContribution = monthlyContribution || 25;
-    const finalDurationMonths = durationMonths || 12;
-    const lendingLimit = finalMonthlyContribution * finalDurationMonths;
-
+router.post('/', async (req, res, next) => {
     try {
+        const { 
+            title, 
+            monthlyContribution, 
+            startDate, 
+            paymentDay, 
+            autoLoanOnMissedPayment, 
+            gracePeriodDays, 
+            durationMonths, 
+            interestRate, 
+            earlyWithdrawalPenalty 
+        } = req.body;
+        
+        // Validate title
+        validateStringLength(title, 'Title', 3, 100);
+        
+        // Validate numeric fields if provided
+        if (monthlyContribution !== undefined) {
+            validatePositiveInteger(monthlyContribution, 'Monthly contribution');
+        }
+        if (durationMonths !== undefined) {
+            validatePositiveInteger(durationMonths, 'Duration months');
+        }
+        if (paymentDay !== undefined) {
+            if (paymentDay < 1 || paymentDay > 31) {
+                throw new ValidationError('Payment day must be between 1 and 31');
+            }
+        }
+        if (gracePeriodDays !== undefined) {
+            validatePositiveInteger(gracePeriodDays, 'Grace period days', 0);
+        }
+        if (interestRate !== undefined) {
+            validatePositiveInteger(interestRate, 'Interest rate');
+        }
+        if (earlyWithdrawalPenalty !== undefined) {
+            validatePositiveInteger(earlyWithdrawalPenalty, 'Early withdrawal penalty', 0);
+        }
+
+        // Calculate lending limit: monthlyContribution * durationMonths
+        const finalMonthlyContribution = monthlyContribution || 25;
+        const finalDurationMonths = durationMonths || 12;
+        const lendingLimit = finalMonthlyContribution * finalDurationMonths;
+
         const club = await Club.create({
             userId: req.user.id,
             title,
@@ -138,40 +171,38 @@ router.post('/', async (req, res) => {
 
         res.status(201).json({ message: 'Club created successfully' })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Edit a club
-router.patch('/:id', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
-    
-    // At least one field must be provided
-    if (!title && monthlyContribution === undefined && startDate === undefined && 
-        paymentDay === undefined && autoLoanOnMissedPayment === undefined && 
-        gracePeriodDays === undefined && durationMonths === undefined && interestRate === undefined && earlyWithdrawalPenalty === undefined) {
-        return res.status(400).json({ error: 'At least one field must be provided' })
-    }
-
+router.patch('/:id', async (req, res, next) => {
     try {
+        const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
+        
+        // At least one field must be provided
+        if (!title && monthlyContribution === undefined && startDate === undefined && 
+            paymentDay === undefined && autoLoanOnMissedPayment === undefined && 
+            gracePeriodDays === undefined && durationMonths === undefined && interestRate === undefined && earlyWithdrawalPenalty === undefined) {
+            throw new ValidationError('At least one field must be provided');
+        }
+
         const club = await Club.findByPk(req.params.id);
         if (!club) {
-            return res.json({ message: 'Club not found' })
+            throw new NotFoundError('Club');
         };
 
         if (club.userId !== req.user.id) {
-            return res.json({ message: 'Not authorized to change club settings' })
+            throw new AuthorizationError('Not authorized to change club settings');
         }
 
         // Validate fields
         if (monthlyContribution !== undefined) {
-            if (monthlyContribution <= 0) {
-                return res.status(400).json({ error: 'Monthly contribution must be greater than 0' });
-            }
+            validatePositiveInteger(monthlyContribution, 'Monthly contribution');
             club.monthlyContribution = monthlyContribution;
             // Recalculate lending limit if duration also changed or if it's the first time
             if (durationMonths !== undefined) {
+                validatePositiveInteger(durationMonths, 'Duration months');
                 club.durationMonths = durationMonths;
             }
             club.lendingLimit = club.monthlyContribution * club.durationMonths;
@@ -183,7 +214,7 @@ router.patch('/:id', async (req, res) => {
         
         if (paymentDay !== undefined) {
             if (paymentDay < 1 || paymentDay > 31) {
-                return res.status(400).json({ error: 'Payment day must be between 1 and 31' });
+                throw new ValidationError('Payment day must be between 1 and 31');
             }
             club.paymentDay = paymentDay;
         }
@@ -193,56 +224,48 @@ router.patch('/:id', async (req, res) => {
         }
         
         if (gracePeriodDays !== undefined) {
-            if (gracePeriodDays < 0) {
-                return res.status(400).json({ error: 'Grace period days must be at least 0' });
-            }
+            validatePositiveInteger(gracePeriodDays, 'Grace period days', 0);
             club.gracePeriodDays = gracePeriodDays;
         }
         
         if (earlyWithdrawalPenalty !== undefined) {
-            if (earlyWithdrawalPenalty < 0) {
-                return res.status(400).json({ error: 'Withdrawal penalty must be at least 0' });
-            }
+            validatePositiveInteger(earlyWithdrawalPenalty, 'Early withdrawal penalty', 0);
             club.earlyWithdrawalPenalty = earlyWithdrawalPenalty;
         }
         
         if (durationMonths !== undefined && monthlyContribution === undefined) {
-            if (durationMonths <= 0) {
-                return res.status(400).json({ error: 'Duration must be greater than 0' });
-            }
+            validatePositiveInteger(durationMonths, 'Duration months');
             club.durationMonths = durationMonths;
             club.lendingLimit = club.monthlyContribution * club.durationMonths;
         }
         
         if (interestRate !== undefined) {
-            if (interestRate <= 0) {
-                return res.status(400).json({ error: 'Interest rate must be greater than 0' });
-            }
+            validatePositiveInteger(interestRate, 'Interest rate');
             club.interestRate = interestRate;
         }
 
         if (title !== undefined) {
+            validateStringLength(title, 'Title', 3, 100);
             club.title = title;
         }
 
         await club.save();
         res.status(200).json({ message: 'Club updated successfully' })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Delete a club
-router.delete('/:id', async (req, res) => {
-    const club = await Club.findByPk(req.params.id);
-    if (!club) {
-        return res.status(404).json({ message: 'Club not found' })
-    };
-
+router.delete('/:id', async (req, res, next) => {
     try {
+        const club = await Club.findByPk(req.params.id);
+        if (!club) {
+            throw new NotFoundError('Club');
+        };
+
         if (club.userId !== req.user.id) {
-            return res.json({ message: 'Not authorized to delete' })
+            throw new AuthorizationError('Not authorized to delete this club');
         }
 
         const members = await Member.findAll({
@@ -259,17 +282,16 @@ router.delete('/:id', async (req, res) => {
         await club.destroy();
         res.status(200).json({ message: 'Deleted club successfully' })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 })
 
 // Check and apply missed payments (treasurer or owner only)
-router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, res) => {
+router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, res, next) => {
     try {
         const club = await Club.findByPk(req.params.id);
         if (!club) {
-            return res.status(404).json({ error: 'Club not found' });
+            throw new NotFoundError('Club');
         }
 
         // Calculate previous month period (MM-YYYY format)
@@ -353,17 +375,16 @@ router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, r
             }))
         });
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message });
+        next(err);
     }
 })
 
 // Accrue monthly interest for all members with outstanding loans
-router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res) => {
+router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res, next) => {
     try {
         const club = await Club.findByPk(req.params.id);
         if (!club) {
-            return res.status(404).json({ error: 'Club not found' });
+            throw new NotFoundError('Club');
         }
 
         const today = new Date();
@@ -435,30 +456,30 @@ router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res) =>
             members: accruedInterest
         });
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message });
+        next(err);
     }
 })
 
 // Transfer club ownership to another member (owner only)
-router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res) => {
-    const { newOwnerUserId } = req.body;
-    
-    if (!newOwnerUserId) {
-        return res.status(400).json({ error: 'newOwnerUserId is required' });
-    }
-    
-    // Only current owner can transfer
-    if (req.user.id !== req.club.userId) {
-        return res.status(403).json({ error: 'Only current owner can transfer ownership' });
-    }
-    
-    // Cannot transfer to self
-    if (req.user.id === newOwnerUserId) {
-        return res.status(400).json({ error: 'Cannot transfer ownership to yourself' });
-    }
-    
+router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res, next) => {
     try {
+        const { newOwnerUserId } = req.body;
+        
+        // Validate UUID
+        if (!newOwnerUserId) {
+            throw new ValidationError('New owner user ID is required');
+        }
+        
+        // Only current owner can transfer
+        if (req.user.id !== req.club.userId) {
+            throw new AuthorizationError('Only current owner can transfer ownership');
+        }
+        
+        // Cannot transfer to self
+        if (req.user.id === newOwnerUserId) {
+            throw new ValidationError('Cannot transfer ownership to yourself');
+        }
+        
         // Verify new owner is a member of this club and not withdrawn
         const newOwner = await Member.findOne({
             where: {
@@ -469,7 +490,7 @@ router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res) => {
         });
         
         if (!newOwner) {
-            return res.status(400).json({ error: 'New owner must be an active member of this club' });
+            throw new ValidationError('New owner must be an active member of this club');
         }
         
         // Find current owner's member record
@@ -500,8 +521,7 @@ router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res) => {
             newOwnerUsername: newOwner.username
         });
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message });
+        next(err);
     }
 })
 
