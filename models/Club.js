@@ -40,6 +40,20 @@ const Club = sequelize.define('Club', {
         type: DataTypes.INTEGER,
         defaultValue: 1,
         allowNull: false
+    },
+    durationMonths: {
+        type: DataTypes.INTEGER,
+        defaultValue: 12,
+        allowNull: false
+    },
+    lendingLimit: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+    },
+    interestRate: {
+        type: DataTypes.INTEGER,
+        defaultValue: 10,
+        allowNull: false
     }
 });
 

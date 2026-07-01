@@ -30,6 +30,11 @@ const Member = sequelize.define('Member', {
         defaultValue: false,
         allowNull: false
     },
+    lastInterestAccrualDate: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null
+    },
 
     investment: {
         type: DataTypes.INTEGER,
@@ -95,9 +100,16 @@ Member.prototype.payLoan = async function (amount) {
 };
 
 Member.prototype.loan = async function (amount) {
+    const club = await Club.findByPk(this.clubId);
+    
+    // Check lending limit
+    if (club && this.totalOwing + amount > club.lendingLimit) {
+        throw new Error(`Loan exceeds lending limit of $${club.lendingLimit}. Current debt: $${this.totalOwing}, Requested: $${amount}`);
+    }
+    
+    // Only add to principal - interest accrues monthly
     this.owing += amount;
-    this.interestOwing += (amount / 10);
-    this.totalOwing += (amount + (amount / 10))
+    this.totalOwing += amount;
     await this.save()
 };
 
