@@ -440,4 +440,69 @@ router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res) =>
     }
 })
 
+// Transfer club ownership to another member (owner only)
+router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res) => {
+    const { newOwnerUserId } = req.body;
+    
+    if (!newOwnerUserId) {
+        return res.status(400).json({ error: 'newOwnerUserId is required' });
+    }
+    
+    // Only current owner can transfer
+    if (req.user.id !== req.club.userId) {
+        return res.status(403).json({ error: 'Only current owner can transfer ownership' });
+    }
+    
+    // Cannot transfer to self
+    if (req.user.id === newOwnerUserId) {
+        return res.status(400).json({ error: 'Cannot transfer ownership to yourself' });
+    }
+    
+    try {
+        // Verify new owner is a member of this club and not withdrawn
+        const newOwner = await Member.findOne({
+            where: {
+                userId: newOwnerUserId,
+                clubId: req.club.id,
+                withdrawnAt: null
+            }
+        });
+        
+        if (!newOwner) {
+            return res.status(400).json({ error: 'New owner must be an active member of this club' });
+        }
+        
+        // Find current owner's member record
+        const currentOwner = await Member.findOne({
+            where: {
+                userId: req.user.id,
+                clubId: req.club.id
+            }
+        });
+        
+        // Transfer ownership
+        req.club.userId = newOwnerUserId;
+        await req.club.save();
+        
+        // Transfer treasurer status: new owner gets it, old owner loses it
+        if (currentOwner) {
+            currentOwner.isTreasurer = false;
+            await currentOwner.save();
+        }
+        
+        newOwner.isTreasurer = true;
+        await newOwner.save();
+        
+        res.json({
+            message: 'Club ownership transferred successfully',
+            clubId: req.club.id,
+            newOwnerUserId: newOwner.userId,
+            newOwnerUsername: newOwner.username
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message });
+    }
+})
+
 module.exports = router
