@@ -250,4 +250,58 @@ router.post('/:id/withdraw', async (req, res) => {
     }
 });
 
+// Pay directly into interest pool to qualify for interest bonus
+router.post('/:id/pay-interest-pool', treasurerAuth, async (req, res) => {
+    const { amount } = req.body;
+    
+    if (!amount || amount <= 0) {
+        return res.status(400).json({ error: 'Amount is required and must be greater than 0' });
+    }
+    
+    try {
+        const member = await Member.findByPk(req.params.id);
+        if (!member) {
+            return res.status(404).json({ error: 'Member not found' });
+        }
+        
+        // Check member belongs to this club
+        if (member.clubId !== req.club.id) {
+            return res.status(400).json({ error: 'Member does not belong to this club' });
+        }
+        
+        // Add to direct interest payment
+        member.directInterestPayment += amount;
+        await member.save();
+        
+        // Record transaction
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1;
+        const currentYear = today.getFullYear();
+        const period = `${String(currentMonth).padStart(2, '0')}-${currentYear}`;
+        
+        await Transaction.create({
+            memberId: member.id,
+            clubId: req.club.id,
+            investAmount: 0,
+            interestAmount: amount,
+            payLoanAmount: 0,
+            loanAmount: 0,
+            withdrawalAmount: 0,
+            period: period
+        });
+        
+        res.json({
+            message: 'Direct interest pool payment recorded',
+            memberId: member.id,
+            username: member.username,
+            amount: amount,
+            totalDirectPayment: member.directInterestPayment,
+            qualifiesForBonus: member.directInterestPayment >= 25
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router
