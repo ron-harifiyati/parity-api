@@ -35,6 +35,11 @@ const Member = sequelize.define('Member', {
         allowNull: true,
         defaultValue: null
     },
+    withdrawnAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null
+    },
 
     investment: {
         type: DataTypes.INTEGER,
@@ -103,8 +108,26 @@ Member.prototype.loan = async function (amount) {
     const club = await Club.findByPk(this.clubId);
     
     // Check lending limit
-    if (club && this.totalOwing + amount > club.lendingLimit) {
-        throw new Error(`Loan exceeds lending limit of $${club.lendingLimit}. Current debt: $${this.totalOwing}, Requested: $${amount}`);
+    if (club) {
+        // Calculate active members (excluding withdrawn)
+        const Member = require('./Member');
+        const activeMembers = await Member.findAll({
+            where: {
+                clubId: this.clubId,
+                withdrawnAt: null
+            }
+        });
+        
+        // Recalculate lending limit based on active members
+        // Limit per member = (monthlyContribution * durationMonths * activeMembers.length) / activeMembers.length
+        // Which simplifies to: monthlyContribution * durationMonths
+        // But we need to check if the total pool can cover all potential loans
+        const maxTotalLoans = club.lendingLimit * activeMembers.length;
+        const currentTotalOwing = activeMembers.reduce((sum, m) => sum + m.totalOwing, 0);
+        
+        if (currentTotalOwing + amount > maxTotalLoans) {
+            throw new Error(`Loan exceeds club lending capacity. Max total: $${maxTotalLoans}, Current total debt: $${currentTotalOwing}, Requested: $${amount}`);
+        }
     }
     
     // Only add to principal - interest accrues monthly

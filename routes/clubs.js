@@ -102,7 +102,7 @@ router.get('/:id', async (req, res) => {
 
 // Create a new club
 router.post('/', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate } = req.body;
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
     if (!title) {
         return res.status(400).json({ error: 'Title is required' })
     }
@@ -123,7 +123,8 @@ router.post('/', async (req, res) => {
             gracePeriodDays: gracePeriodDays || 1,
             durationMonths: finalDurationMonths,
             lendingLimit: lendingLimit,
-            interestRate: interestRate || 10
+            interestRate: interestRate || 10,
+            earlyWithdrawalPenalty: earlyWithdrawalPenalty || 10
         });
 
         // Automatically add club creator as a member with treasurer role
@@ -144,12 +145,12 @@ router.post('/', async (req, res) => {
 
 // Edit a club
 router.patch('/:id', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate } = req.body;
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
     
     // At least one field must be provided
     if (!title && monthlyContribution === undefined && startDate === undefined && 
         paymentDay === undefined && autoLoanOnMissedPayment === undefined && 
-        gracePeriodDays === undefined && durationMonths === undefined && interestRate === undefined) {
+        gracePeriodDays === undefined && durationMonths === undefined && interestRate === undefined && earlyWithdrawalPenalty === undefined) {
         return res.status(400).json({ error: 'At least one field must be provided' })
     }
 
@@ -196,6 +197,13 @@ router.patch('/:id', async (req, res) => {
                 return res.status(400).json({ error: 'Grace period days must be at least 0' });
             }
             club.gracePeriodDays = gracePeriodDays;
+        }
+        
+        if (earlyWithdrawalPenalty !== undefined) {
+            if (earlyWithdrawalPenalty < 0) {
+                return res.status(400).json({ error: 'Withdrawal penalty must be at least 0' });
+            }
+            club.earlyWithdrawalPenalty = earlyWithdrawalPenalty;
         }
         
         if (durationMonths !== undefined && monthlyContribution === undefined) {
