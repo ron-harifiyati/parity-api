@@ -110,8 +110,7 @@ Member.prototype.loan = async function (amount) {
     // Check lending limit
     if (club) {
         // Calculate active members (excluding withdrawn)
-        const Member = require('./Member');
-        const activeMembers = await Member.findAll({
+        const activeMembers = await this.constructor.findAll({
             where: {
                 clubId: this.clubId,
                 withdrawnAt: null
