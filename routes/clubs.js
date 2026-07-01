@@ -102,20 +102,28 @@ router.get('/:id', async (req, res) => {
 
 // Create a new club
 router.post('/', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays } = req.body;
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate } = req.body;
     if (!title) {
         return res.status(400).json({ error: 'Title is required' })
     }
+
+    // Calculate lending limit: monthlyContribution * durationMonths
+    const finalMonthlyContribution = monthlyContribution || 25;
+    const finalDurationMonths = durationMonths || 12;
+    const lendingLimit = finalMonthlyContribution * finalDurationMonths;
 
     try {
         const club = await Club.create({
             userId: req.user.id,
             title,
-            monthlyContribution: monthlyContribution || 25,
+            monthlyContribution: finalMonthlyContribution,
             startDate: startDate || null,
             paymentDay: paymentDay || 30,
             autoLoanOnMissedPayment: autoLoanOnMissedPayment !== undefined ? autoLoanOnMissedPayment : true,
-            gracePeriodDays: gracePeriodDays || 1
+            gracePeriodDays: gracePeriodDays || 1,
+            durationMonths: finalDurationMonths,
+            lendingLimit: lendingLimit,
+            interestRate: interestRate || 10
         });
 
         // Automatically add club creator as a member with treasurer role
@@ -136,11 +144,12 @@ router.post('/', async (req, res) => {
 
 // Edit a club
 router.patch('/:id', async (req, res) => {
-    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays } = req.body;
+    const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate } = req.body;
     
     // At least one field must be provided
     if (!title && monthlyContribution === undefined && startDate === undefined && 
-        paymentDay === undefined && autoLoanOnMissedPayment === undefined && gracePeriodDays === undefined) {
+        paymentDay === undefined && autoLoanOnMissedPayment === undefined && 
+        gracePeriodDays === undefined && durationMonths === undefined && interestRate === undefined) {
         return res.status(400).json({ error: 'At least one field must be provided' })
     }
 
@@ -160,6 +169,11 @@ router.patch('/:id', async (req, res) => {
                 return res.status(400).json({ error: 'Monthly contribution must be greater than 0' });
             }
             club.monthlyContribution = monthlyContribution;
+            // Recalculate lending limit if duration also changed or if it's the first time
+            if (durationMonths !== undefined) {
+                club.durationMonths = durationMonths;
+            }
+            club.lendingLimit = club.monthlyContribution * club.durationMonths;
         }
         
         if (startDate !== undefined) {
@@ -182,6 +196,21 @@ router.patch('/:id', async (req, res) => {
                 return res.status(400).json({ error: 'Grace period days must be at least 0' });
             }
             club.gracePeriodDays = gracePeriodDays;
+        }
+        
+        if (durationMonths !== undefined && monthlyContribution === undefined) {
+            if (durationMonths <= 0) {
+                return res.status(400).json({ error: 'Duration must be greater than 0' });
+            }
+            club.durationMonths = durationMonths;
+            club.lendingLimit = club.monthlyContribution * club.durationMonths;
+        }
+        
+        if (interestRate !== undefined) {
+            if (interestRate <= 0) {
+                return res.status(400).json({ error: 'Interest rate must be greater than 0' });
+            }
+            club.interestRate = interestRate;
         }
 
         if (title !== undefined) {
@@ -314,6 +343,88 @@ router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, r
                 username: m.username,
                 amount: club.monthlyContribution
             }))
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message });
+    }
+})
+
+// Accrue monthly interest for all members with outstanding loans
+router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res) => {
+    try {
+        const club = await Club.findByPk(req.params.id);
+        if (!club) {
+            return res.status(404).json({ error: 'Club not found' });
+        }
+
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth(); // 0-11
+        const currentPeriod = `${String(currentMonth + 1).padStart(2, '0')}-${currentYear}`; // MM-YYYY
+
+        // Get all members in the club
+        const members = await Member.findAll({ where: { clubId: club.id } });
+
+        const accruedInterest = [];
+
+        for (const member of members) {
+            // Only accrue for members with outstanding principal
+            if (member.owing <= 0) continue;
+
+            // Check if we've already accrued for this period
+            if (member.lastInterestAccrualDate) {
+                const lastYear = member.lastInterestAccrualDate.getFullYear();
+                const lastMonth = member.lastInterestAccrualDate.getMonth();
+                const lastPeriod = `${String(lastMonth + 1).padStart(2, '0')}-${lastYear}`;
+                
+                if (lastPeriod === currentPeriod) {
+                    // Already accrued for this period
+                    continue;
+                }
+            }
+
+            // Calculate interest: 10% of current principal, rounded UP
+            // Special case: if principal < 10, interest = 1 (flat)
+            const interestRateDecimal = club.interestRate / 100;
+            let interest;
+            if (member.owing < 10) {
+                interest = 1; // Flat $1 for loans under $10
+            } else {
+                interest = Math.ceil(member.owing * interestRateDecimal);
+            }
+
+            // Update member
+            member.interestOwing += interest;
+            member.totalOwing += interest;
+            member.lastInterestAccrualDate = today;
+            await member.save();
+
+            // Record transaction
+            await Transaction.create({
+                memberId: member.id,
+                clubId: club.id,
+                interestAmount: interest,
+                investAmount: 0,
+                payLoanAmount: 0,
+                loanAmount: 0,
+                period: currentPeriod
+            });
+
+            accruedInterest.push({
+                memberId: member.id,
+                username: member.username,
+                principal: member.owing,
+                interest: interest
+            });
+        }
+
+        res.json({
+            message: 'Interest accrued successfully',
+            period: currentPeriod,
+            clubId: club.id,
+            totalInterestAccrued: accruedInterest.reduce((sum, i) => sum + i.interest, 0),
+            members: accruedInterest
         });
     } catch (err) {
         console.log(err);
