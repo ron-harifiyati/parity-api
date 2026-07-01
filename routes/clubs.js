@@ -11,7 +11,57 @@ const router = express.Router();
 
 router.use(auth);
 
-// Get all clubs
+/**
+ * @swagger
+ * tags:
+ *   name: Clubs
+ *   description: Club management endpoints
+ */
+
+/**
+ * @swagger
+ * /clubs:
+ *   get:
+ *     summary: Get all clubs for the authenticated user
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     description: Returns all clubs where the user is either the owner or a member
+ *     responses:
+ *       200:
+ *         description: List of clubs with financial summaries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: string
+ *                     format: uuid
+ *                   title:
+ *                     type: string
+ *                     example: My Savings Club
+ *                   totalMembers:
+ *                     type: integer
+ *                     example: 5
+ *                   totalInvestment:
+ *                     type: integer
+ *                     example: 500
+ *                   totalInterest:
+ *                     type: integer
+ *                     example: 50
+ *                   inHand:
+ *                     type: integer
+ *                     example: 450
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/', async (req, res, next) => {
     try {
         const memberships = await Member.findAll({
@@ -61,7 +111,57 @@ router.get('/', async (req, res, next) => {
     }
 });
 
-// Get one club
+/**
+ * @swagger
+ * /clubs/{id}:
+ *   get:
+ *     summary: Get a specific club by ID
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     responses:
+ *       200:
+ *         description: Club details with financial summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/Club'
+ *                 - type: object
+ *                   properties:
+ *                     totalMembers:
+ *                       type: integer
+ *                       example: 5
+ *                     totalInvestment:
+ *                       type: integer
+ *                       example: 500
+ *                     totalInterest:
+ *                       type: integer
+ *                       example: 50
+ *                     inHand:
+ *                       type: integer
+ *                       example: 450
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/:id', async (req, res, next) => {
     try {
         // 1. You must "include" the members to access them later
@@ -101,7 +201,77 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
-// Create a new club
+/**
+ * @swagger
+ * /clubs:
+ *   post:
+ *     summary: Create a new club
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: My New Savings Club
+ *                 description: Club name
+ *               monthlyContribution:
+ *                 type: integer
+ *                 example: 25
+ *                 description: Monthly contribution amount
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Club start date
+ *               paymentDay:
+ *                 type: integer
+ *                 example: 30
+ *                 description: Day of month for payments (1-31)
+ *               autoLoanOnMissedPayment:
+ *                 type: boolean
+ *                 example: true
+ *                 description: Auto-loan on missed payment
+ *               gracePeriodDays:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Grace period in days
+ *               durationMonths:
+ *                 type: integer
+ *                 example: 12
+ *                 description: Club duration in months
+ *               interestRate:
+ *                 type: integer
+ *                 example: 10
+ *                 description: Interest rate percentage
+ *               earlyWithdrawalPenalty:
+ *                 type: integer
+ *                 example: 10
+ *                 description: Early withdrawal penalty
+ *     responses:
+ *       201:
+ *         description: Club created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', async (req, res, next) => {
     try {
         const { 
@@ -175,7 +345,88 @@ router.post('/', async (req, res, next) => {
     }
 });
 
-// Edit a club
+/**
+ * @swagger
+ * /clubs/{id}:
+ *   patch:
+ *     summary: Update a club
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: Updated Club Name
+ *               monthlyContribution:
+ *                 type: integer
+ *                 example: 30
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *               paymentDay:
+ *                 type: integer
+ *                 example: 25
+ *               autoLoanOnMissedPayment:
+ *                 type: boolean
+ *               gracePeriodDays:
+ *                 type: integer
+ *                 example: 2
+ *               durationMonths:
+ *                 type: integer
+ *                 example: 18
+ *               interestRate:
+ *                 type: integer
+ *                 example: 15
+ *               earlyWithdrawalPenalty:
+ *                 type: integer
+ *                 example: 15
+ *             required: []
+ *     responses:
+ *       200:
+ *         description: Club updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Not authorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can update
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.patch('/:id', async (req, res, next) => {
     try {
         const { title, monthlyContribution, startDate, paymentDay, autoLoanOnMissedPayment, gracePeriodDays, durationMonths, interestRate, earlyWithdrawalPenalty } = req.body;
@@ -256,7 +507,48 @@ router.patch('/:id', async (req, res, next) => {
     }
 });
 
-// Delete a club
+/**
+ * @swagger
+ * /clubs/{id}:
+ *   delete:
+ *     summary: Delete a club
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     responses:
+ *       200:
+ *         description: Club deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       401:
+ *         description: Not authorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can delete
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.delete('/:id', async (req, res, next) => {
     try {
         const club = await Club.findByPk(req.params.id);
@@ -286,6 +578,65 @@ router.delete('/:id', async (req, res, next) => {
     }
 })
 
+/**
+ * @swagger
+ * /clubs/{id}/check-missed-payments:
+ *   post:
+ *     summary: Check and apply missed payments
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     description: Checks for members who missed payments and optionally auto-loans them (treasurer/owner only)
+ *     responses:
+ *       200:
+ *         description: Missed payments check result
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Missed payments check complete
+ *                 period:
+ *                   type: string
+ *                   example: 01-2024
+ *                 totalMembers:
+ *                   type: integer
+ *                   example: 5
+ *                 missedCount:
+ *                   type: integer
+ *                   example: 2
+ *                 loanedCount:
+ *                   type: integer
+ *                   example: 2
+ *       401:
+ *         description: Not authorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only treasurer or owner can perform this action
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Check and apply missed payments (treasurer or owner only)
 router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, res, next) => {
     try {
@@ -379,6 +730,79 @@ router.post('/:id/check-missed-payments', clubAuth, treasurerAuth, async (req, r
     }
 })
 
+/**
+ * @swagger
+ * /clubs/{id}/accrue-interest:
+ *   post:
+ *     summary: Accrue monthly interest for all members
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     description: Accrues monthly interest for all members with outstanding loans (treasurer/owner only)
+ *     responses:
+ *       200:
+ *         description: Interest accrued successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Interest accrued successfully
+ *                 period:
+ *                   type: string
+ *                   example: 01-2024
+ *                 clubId:
+ *                   type: string
+ *                   format: uuid
+ *                 totalInterestAccrued:
+ *                   type: integer
+ *                   example: 15
+ *                 members:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       memberId:
+ *                         type: string
+ *                         format: uuid
+ *                       username:
+ *                         type: string
+ *                         example: johndoe
+ *                       principal:
+ *                         type: integer
+ *                         example: 100
+ *                       interest:
+ *                         type: integer
+ *                         example: 10
+ *       401:
+ *         description: Not authorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only treasurer or owner can perform this action
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Accrue monthly interest for all members with outstanding loans
 router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res, next) => {
     try {
@@ -460,6 +884,81 @@ router.post('/:id/accrue-interest', clubAuth, treasurerAuth, async (req, res, ne
     }
 })
 
+/**
+ * @swagger
+ * /clubs/{id}/transfer-ownership:
+ *   patch:
+ *     summary: Transfer club ownership
+ *     tags: [Clubs]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               newOwnerUserId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: User ID of the new owner
+ *                 example: 550e8400-e29b-41d4-a716-446655440000
+ *             required: [newOwnerUserId]
+ *     description: Transfers club ownership to another member (owner only)
+ *     responses:
+ *       200:
+ *         description: Ownership transferred successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Club ownership transferred successfully
+ *                 clubId:
+ *                   type: string
+ *                   format: uuid
+ *                 newOwnerUserId:
+ *                   type: string
+ *                   format: uuid
+ *                 newOwnerUsername:
+ *                   type: string
+ *                   example: newowner
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Not authorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only current owner can transfer
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club or new owner not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Transfer club ownership to another member (owner only)
 router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res, next) => {
     try {

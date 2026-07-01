@@ -2,6 +2,7 @@ const express = require('express');
 const sequelize = require('./database');
 const { errorHandler } = require('./utils/errors');
 const { sanitizeInput } = require('./middleware/sanitizationMiddleware');
+const setupSwagger = require('./swagger');
 
 const authRoutes = require('./routes/auth');
 const clubRoutes = require('./routes/clubs');
@@ -20,6 +21,9 @@ app.use(sanitizeInput);
 app.use('/auth', authRoutes);
 app.use('/clubs', clubRoutes);
 app.use('/members', memberRoutes);
+
+// Swagger documentation (public access)
+setupSwagger(app);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);
