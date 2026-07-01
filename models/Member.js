@@ -25,6 +25,11 @@ const Member = sequelize.define('Member', {
         type: DataTypes.UUID,
         allowNull: false
     },
+    isTreasurer: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        allowNull: false
+    },
 
     investment: {
         type: DataTypes.INTEGER,

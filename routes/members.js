@@ -2,6 +2,7 @@ const express = require('express');
 const { Member, User, Transaction } = require('../models/Relationships');
 const auth = require('../middleware/authMiddleware');
 const clubAuth = require('../middleware/clubMiddleware');
+const treasurerAuth = require('../middleware/treasurerMiddleware');
 const router = express.Router();
 const { Op } = require('sequelize');
 
@@ -68,7 +69,7 @@ router.post('/', async (req, res) => {
             username: user.username,
             email: user.email,
             clubId: req.club.id,
-            username: username
+            isTreasurer: false
         });
         res.status(200).json({ message: "Member added successfully" })
     } catch (err) {
@@ -77,18 +78,18 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Edit a member's information
-router.patch('/:id', async (req, res) => {
-    const { investAmount, interestAmount, payLoanAmount, loanAmount } = req.body;
+// Edit a member's information (record transaction)
+router.patch('/:id', treasurerAuth, async (req, res) => {
+    const { investAmount, interestAmount, payLoanAmount, loanAmount, period } = req.body;
     const noValues = (!investAmount && !interestAmount && !payLoanAmount && !loanAmount);
     const valuesAtZero = (investAmount < 1 && interestAmount < 1 && payLoanAmount < 1 && loanAmount < 1);
 
     if (noValues) {
-        return res.status(404).json({ message: 'At least one amount must be greater than zero' })
+        return res.status(400).json({ message: 'At least one amount must be greater than zero' })
     }
 
-    if (req.user.id !== req.club.userId) {
-        return res.status(401).json({ message: 'You cannot record transactions in this club' })
+    if (!period) {
+        return res.status(400).json({ message: 'Period (MM-YYYY) is required' })
     }
 
     try {
@@ -113,10 +114,11 @@ router.patch('/:id', async (req, res) => {
         await Transaction.create({
             memberId: member.id,
             clubId: req.club.id,
-            investAmount,
-            interestAmount,
-            payLoanAmount,
-            loanAmount
+            investAmount: investAmount || 0,
+            interestAmount: interestAmount || 0,
+            payLoanAmount: payLoanAmount || 0,
+            loanAmount: loanAmount || 0,
+            period: period
         });
 
         res.status(200).json({ message: 'Transaction complete' })
@@ -143,6 +145,32 @@ router.delete('/:id', async (req, res) => {
         await member.destroy();
         res.json({ message: 'Member deleted successfully' })
 
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message })
+    }
+});
+
+// Set treasurer role for a member (owner only)
+router.patch('/:id/treasurer', async (req, res) => {
+    if (req.user.id !== req.club.userId) {
+        return res.status(403).json({ message: 'Only club owner can assign treasurer role' })
+    }
+
+    try {
+        const member = await Member.findByPk(req.params.id);
+        if (!member) {
+            return res.status(404).json({ message: 'Member not found' })
+        }
+
+        // Toggle treasurer status
+        member.isTreasurer = !member.isTreasurer;
+        await member.save();
+
+        res.json({
+            message: `Member ${member.isTreasurer ? 'promoted to' : 'removed from'} treasurer`,
+            isTreasurer: member.isTreasurer
+        })
     } catch (err) {
         console.log(err);
         res.status(500).json({ error: err.message })

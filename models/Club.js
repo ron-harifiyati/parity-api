@@ -16,6 +16,30 @@ const Club = sequelize.define('Club', {
     title: {
         type: DataTypes.STRING,
         allowNull: false
+    },
+    monthlyContribution: {
+        type: DataTypes.INTEGER,
+        defaultValue: 25,
+        allowNull: false
+    },
+    startDate: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    paymentDay: {
+        type: DataTypes.INTEGER,
+        defaultValue: 30,
+        allowNull: false
+    },
+    autoLoanOnMissedPayment: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+        allowNull: false
+    },
+    gracePeriodDays: {
+        type: DataTypes.INTEGER,
+        defaultValue: 1,
+        allowNull: false
     }
 });
 
