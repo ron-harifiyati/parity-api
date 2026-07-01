@@ -3,6 +3,8 @@ const { Member, User, Transaction } = require('../models/Relationships');
 const auth = require('../middleware/authMiddleware');
 const clubAuth = require('../middleware/clubMiddleware');
 const treasurerAuth = require('../middleware/treasurerMiddleware');
+const { NotFoundError, AuthorizationError, ValidationError } = require('../utils/errors');
+const { validateStringLength, validatePeriod } = require('../middleware/sanitizationMiddleware');
 const router = express.Router();
 const { Op } = require('sequelize');
 
@@ -10,7 +12,7 @@ router.use(auth);
 router.use(clubAuth)
 
 // Get all members in a club
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
     try {
         const members = await Member.findAll({
             where: {
@@ -19,13 +21,12 @@ router.get('/', async (req, res) => {
         });
         res.json(members)
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ message: err.message })
+        next(err);
     }
 });
 
 // Get a specific member's information
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
     try {
         const member = await Member.findOne({
             where: {
@@ -37,31 +38,33 @@ router.get('/:id', async (req, res) => {
         });
 
         if (!member) {
-            return res.status(404).json({ message: 'Member not found' })
+            throw new NotFoundError('Member');
         };
 
         res.json(member)
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ message: err.message })
+        next(err);
     }
 });
 
 // Add a member to a club
-router.post('/', async (req, res) => {
-    const { username } = req.body;
-    if (!username) {
-        return res.status(404).json({ message: 'Username is required' })
-    }
-
-    if (req.user.id !== req.club.userId) {
-        return res.status(401).json({ message: 'You cannot add members to this club' })
-    }
-
+router.post('/', async (req, res, next) => {
     try {
+        const { username } = req.body;
+        
+        // Validate username
+        if (!username) {
+            throw new ValidationError('Username is required');
+        }
+        validateStringLength(username, 'Username', 3, 50);
+
+        if (req.user.id !== req.club.userId) {
+            throw new AuthorizationError('You cannot add members to this club');
+        }
+
         const user = await User.findOne({ where: { username } });
         if (!user) {
-            return res.status(404).json({ message: 'User not found' })
+            throw new NotFoundError('User');
         };
 
         const member = await Member.create({
@@ -73,29 +76,27 @@ router.post('/', async (req, res) => {
         });
         res.status(200).json({ message: "Member added successfully" })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Edit a member's information (record transaction)
-router.patch('/:id', treasurerAuth, async (req, res) => {
-    const { investAmount, interestAmount, payLoanAmount, loanAmount, period } = req.body;
-    const noValues = (!investAmount && !interestAmount && !payLoanAmount && !loanAmount);
-    const valuesAtZero = (investAmount < 1 && interestAmount < 1 && payLoanAmount < 1 && loanAmount < 1);
-
-    if (noValues) {
-        return res.status(400).json({ message: 'At least one amount must be greater than zero' })
-    }
-
-    if (!period) {
-        return res.status(400).json({ message: 'Period (MM-YYYY) is required' })
-    }
-
+router.patch('/:id', treasurerAuth, async (req, res, next) => {
     try {
+        const { investAmount, interestAmount, payLoanAmount, loanAmount, period } = req.body;
+        const noValues = (!investAmount && !interestAmount && !payLoanAmount && !loanAmount);
+        const valuesAtZero = (investAmount < 1 && interestAmount < 1 && payLoanAmount < 1 && loanAmount < 1);
+
+        if (noValues || valuesAtZero) {
+            throw new ValidationError('At least one amount must be greater than zero');
+        }
+
+        // Validate period
+        validatePeriod(period, 'Period');
+
         const member = await Member.findByPk(req.params.id);
         if (!member) {
-            return res.status(404).json({ message: 'Member not found' })
+            throw new NotFoundError('Member');
         };
 
         if (investAmount > 0) {
@@ -123,21 +124,20 @@ router.patch('/:id', treasurerAuth, async (req, res) => {
 
         res.status(200).json({ message: 'Transaction complete' })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Delete a member from a club
-router.delete('/:id', async (req, res) => {
-    if (req.user.id !== req.club.userId) {
-        return res.status(401).json({ message: 'You cannot add members to this club' })
-    }
-
+router.delete('/:id', async (req, res, next) => {
     try {
+        if (req.user.id !== req.club.userId) {
+            throw new AuthorizationError('You cannot remove members from this club');
+        }
+
         const member = await Member.findByPk(req.params.id);
         if (!member) {
-            res.status(404).json({ message: 'Member not found' })
+            throw new NotFoundError('Member');
         };
 
         const transactions = await Transaction.findAll({ where: { memberId: req.params.id } });
@@ -146,21 +146,20 @@ router.delete('/:id', async (req, res) => {
         res.json({ message: 'Member deleted successfully' })
 
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Set treasurer role for a member (owner only)
-router.patch('/:id/treasurer', async (req, res) => {
-    if (req.user.id !== req.club.userId) {
-        return res.status(403).json({ message: 'Only club owner can assign treasurer role' })
-    }
-
+router.patch('/:id/treasurer', async (req, res, next) => {
     try {
+        if (req.user.id !== req.club.userId) {
+            throw new AuthorizationError('Only club owner can assign treasurer role');
+        }
+
         const member = await Member.findByPk(req.params.id);
         if (!member) {
-            return res.status(404).json({ message: 'Member not found' })
+            throw new NotFoundError('Member');
         }
 
         // Toggle treasurer status
@@ -172,42 +171,41 @@ router.patch('/:id/treasurer', async (req, res) => {
             isTreasurer: member.isTreasurer
         })
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
 // Withdraw a member from the club (owner only)
-router.post('/:id/withdraw', async (req, res) => {
-    if (req.user.id !== req.club.userId) {
-        return res.status(403).json({ message: 'Only club owner can withdraw members' })
-    }
-
+router.post('/:id/withdraw', async (req, res, next) => {
     try {
+        if (req.user.id !== req.club.userId) {
+            throw new AuthorizationError('Only club owner can withdraw members');
+        }
+
         const member = await Member.findByPk(req.params.id);
         if (!member) {
-            return res.status(404).json({ message: 'Member not found' })
+            throw new NotFoundError('Member');
         }
 
         // Check member belongs to this club
         if (member.clubId !== req.club.id) {
-            return res.status(400).json({ message: 'Member does not belong to this club' })
+            throw new ValidationError('Member does not belong to this club');
         }
 
         // Check member is not already withdrawn
         if (member.withdrawnAt) {
-            return res.status(400).json({ message: 'Member has already withdrawn' })
+            throw new ValidationError('Member has already withdrawn');
         }
 
         // Check if member is club owner - must transfer ownership first
         if (member.userId === req.club.userId) {
-            return res.status(400).json({ message: 'Owner must transfer ownership before withdrawing' })
+            throw new ValidationError('Owner must transfer ownership before withdrawing');
         }
 
         // Get club to access penalty
         const club = await Club.findByPk(req.club.id);
         if (!club) {
-            return res.status(404).json({ message: 'Club not found' })
+            throw new NotFoundError('Club');
         }
 
         // Calculate refund: totalInvestment - penalty
@@ -245,8 +243,7 @@ router.post('/:id/withdraw', async (req, res) => {
             withdrawnAt: member.withdrawnAt
         });
     } catch (err) {
-        console.log(err);
-        res.status(500).json({ error: err.message })
+        next(err);
     }
 });
 
