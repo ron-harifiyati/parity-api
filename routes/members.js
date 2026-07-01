@@ -11,6 +11,52 @@ const { Op } = require('sequelize');
 router.use(auth);
 router.use(clubAuth)
 
+/**
+ * @swagger
+ * tags:
+ *   name: Members
+ *   description: Club member management endpoints
+ */
+
+/**
+ * @swagger
+ * /members:
+ *   get:
+ *     summary: Get all members in a club
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     description: Returns all members in the club specified by the ClubId header
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     responses:
+ *       200:
+ *         description: List of club members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Member'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get all members in a club
 router.get('/', async (req, res, next) => {
     try {
@@ -25,6 +71,49 @@ router.get('/', async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members/{id}:
+ *   get:
+ *     summary: Get a specific member by ID
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID
+ *     responses:
+ *       200:
+ *         description: Member details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Member'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get a specific member's information
 router.get('/:id', async (req, res, next) => {
     try {
@@ -47,6 +136,61 @@ router.get('/:id', async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members:
+ *   post:
+ *     summary: Add a member to a club
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: newmember
+ *                 description: Username of the user to add as member
+ *             required: [username]
+ *     description: Add an existing user as a member to the club (owner only)
+ *     responses:
+ *       200:
+ *         description: Member added successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       400:
+ *         description: Validation error or user not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can add members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Add a member to a club
 router.post('/', async (req, res, next) => {
     try {
@@ -80,6 +224,90 @@ router.post('/', async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members/{id}:
+ *   patch:
+ *     summary: Record a transaction for a member
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               investAmount:
+ *                 type: integer
+ *                 example: 25
+ *                 description: Investment amount
+ *               interestAmount:
+ *                 type: integer
+ *                 example: 5
+ *                 description: Interest payment amount
+ *               payLoanAmount:
+ *                 type: integer
+ *                 example: 10
+ *                 description: Loan payment amount
+ *               loanAmount:
+ *                 type: integer
+ *                 example: 50
+ *                 description: Loan amount
+ *               period:
+ *                 type: string
+ *                 example: 01-2024
+ *                 description: Transaction period (MM-YYYY)
+ *             required: [period]
+ *     description: Record investment, interest payment, loan payment, or new loan (treasurer/owner only). At least one amount must be > 0.
+ *     responses:
+ *       200:
+ *         description: Transaction recorded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       400:
+ *         description: Validation error or no valid amounts provided
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only treasurer or owner can record transactions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Edit a member's information (record transaction)
 router.patch('/:id', treasurerAuth, async (req, res, next) => {
     try {
@@ -128,6 +356,56 @@ router.patch('/:id', treasurerAuth, async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members/{id}:
+ *   delete:
+ *     summary: Remove a member from a club
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID
+ *     description: Remove a member from the club (owner only)
+ *     responses:
+ *       200:
+ *         description: Member removed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MessageResponse'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can remove members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Delete a member from a club
 router.delete('/:id', async (req, res, next) => {
     try {
@@ -150,6 +428,63 @@ router.delete('/:id', async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members/{id}/treasurer:
+ *   patch:
+ *     summary: Toggle treasurer role for a member
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID
+ *     description: Toggle treasurer role for a member (owner only)
+ *     responses:
+ *       200:
+ *         description: Treasurer role toggled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member promoted to treasurer
+ *                 isTreasurer:
+ *                   type: boolean
+ *                   example: true
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can assign treasurer role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Member not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Set treasurer role for a member (owner only)
 router.patch('/:id/treasurer', async (req, res, next) => {
     try {
@@ -175,6 +510,84 @@ router.patch('/:id/treasurer', async (req, res, next) => {
     }
 });
 
+/**
+ * @swagger
+ * /members/{id}/withdraw:
+ *   post:
+ *     summary: Withdraw a member from the club
+ *     tags: [Members]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: ClubId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Club ID
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Member ID
+ *     description: Withdraw a member from the club with penalty (owner only). Cannot withdraw the owner.
+ *     responses:
+ *       200:
+ *         description: Member withdrawn successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Member withdrawn successfully
+ *                 memberId:
+ *                   type: string
+ *                   format: uuid
+ *                 username:
+ *                   type: string
+ *                   example: johndoe
+ *                 totalInvestment:
+ *                   type: integer
+ *                   example: 500
+ *                 penalty:
+ *                   type: integer
+ *                   example: 10
+ *                 refundAmount:
+ *                   type: integer
+ *                   example: 490
+ *                 withdrawnAt:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         description: Validation error (member already withdrawn or is owner)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Authentication required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       403:
+ *         description: Only club owner can withdraw members
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Member or club not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Withdraw a member from the club (owner only)
 router.post('/:id/withdraw', async (req, res, next) => {
     try {
