@@ -177,4 +177,72 @@ router.patch('/:id/treasurer', async (req, res) => {
     }
 });
 
+// Withdraw a member from the club (owner only)
+router.post('/:id/withdraw', async (req, res) => {
+    if (req.user.id !== req.club.userId) {
+        return res.status(403).json({ message: 'Only club owner can withdraw members' })
+    }
+
+    try {
+        const member = await Member.findByPk(req.params.id);
+        if (!member) {
+            return res.status(404).json({ message: 'Member not found' })
+        }
+
+        // Check member belongs to this club
+        if (member.clubId !== req.club.id) {
+            return res.status(400).json({ message: 'Member does not belong to this club' })
+        }
+
+        // Check member is not already withdrawn
+        if (member.withdrawnAt) {
+            return res.status(400).json({ message: 'Member has already withdrawn' })
+        }
+
+        // Get club to access penalty
+        const club = await Club.findByPk(req.club.id);
+        if (!club) {
+            return res.status(404).json({ message: 'Club not found' })
+        }
+
+        // Calculate refund: totalInvestment - penalty
+        const penalty = club.earlyWithdrawalPenalty || 10;
+        const refundAmount = member.totalInvestment - penalty;
+
+        // Mark member as withdrawn
+        member.withdrawnAt = new Date();
+        await member.save();
+
+        // Record withdrawal transaction
+        const today = new Date();
+        const currentMonth = today.getMonth() + 1;
+        const currentYear = today.getFullYear();
+        const period = `${String(currentMonth).padStart(2, '0')}-${currentYear}`;
+
+        await Transaction.create({
+            memberId: member.id,
+            clubId: req.club.id,
+            withdrawalAmount: refundAmount,
+            investAmount: 0,
+            interestAmount: 0,
+            payLoanAmount: 0,
+            loanAmount: 0,
+            period: period
+        });
+
+        res.json({
+            message: 'Member withdrawn successfully',
+            memberId: member.id,
+            username: member.username,
+            totalInvestment: member.totalInvestment,
+            penalty: penalty,
+            refundAmount: refundAmount,
+            withdrawnAt: member.withdrawnAt
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message })
+    }
+});
+
 module.exports = router

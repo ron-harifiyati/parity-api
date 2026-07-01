@@ -54,6 +54,11 @@ const Club = sequelize.define('Club', {
         type: DataTypes.INTEGER,
         defaultValue: 10,
         allowNull: false
+    },
+    earlyWithdrawalPenalty: {
+        type: DataTypes.INTEGER,
+        defaultValue: 10,
+        allowNull: false
     }
 });
 
