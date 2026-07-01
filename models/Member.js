@@ -40,6 +40,11 @@ const Member = sequelize.define('Member', {
         allowNull: true,
         defaultValue: null
     },
+    directInterestPayment: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0,
+        allowNull: false
+    },
 
     investment: {
         type: DataTypes.INTEGER,

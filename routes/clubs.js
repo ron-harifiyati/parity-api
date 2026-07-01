@@ -505,4 +505,67 @@ router.patch('/:id/transfer-ownership', auth, clubAuth, async (req, res) => {
     }
 })
 
+// Calculate end-of-year payout for club members
+router.get('/:id/payout', auth, clubAuth, async (req, res) => {
+    try {
+        const club = await Club.findByPk(req.params.id, {
+            include: [
+                {
+                    model: Member,
+                    as: 'members'
+                }
+            ]
+        });
+        
+        if (!club) {
+            return res.status(404).json({ error: 'Club not found' });
+        }
+        
+        const members = club.members || [];
+        
+        // 1. Calculate total contributions pool
+        const totalContributions = members.reduce((sum, m) => sum + m.totalInvestment, 0);
+        
+        // 2. Base share per member
+        const baseShare = members.length > 0 ? Math.floor(totalContributions / members.length) : 0;
+        
+        // 3. Total interest pool (all interest earned by all members)
+        const totalInterestPool = members.reduce((sum, m) => sum + m.interestAcrued, 0);
+        
+        // 4. Identify qualifiers (earned >= $25 in interest OR paid >= $25 directly)
+        const qualifiers = members.filter(m => m.interestAcrued >= 25 || m.directInterestPayment >= 25);
+        const interestShare = qualifiers.length > 0 ? Math.floor(totalInterestPool / qualifiers.length) : 0;
+        
+        // 5. Calculate each member's payout
+        const payouts = members.map(member => {
+            const memberBaseShare = baseShare - member.totalOwing;
+            const memberInterestShare = qualifiers.includes(member) ? interestShare : 0;
+            const total = memberBaseShare + memberInterestShare;
+            
+            return {
+                memberId: member.id,
+                username: member.username,
+                baseShare: memberBaseShare,
+                interestShare: memberInterestShare,
+                total: total,
+                outstandingDebt: member.totalOwing
+            };
+        });
+        
+        res.json({
+            clubId: club.id,
+            clubTitle: club.title,
+            totalContributions: totalContributions,
+            totalInterestPool: totalInterestPool,
+            baseSharePerMember: baseShare,
+            interestSharePerQualifier: interestShare,
+            numberOfQualifiers: qualifiers.length,
+            payouts: payouts
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: err.message });
+    }
+})
+
 module.exports = router
