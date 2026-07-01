@@ -199,6 +199,11 @@ router.post('/:id/withdraw', async (req, res) => {
             return res.status(400).json({ message: 'Member has already withdrawn' })
         }
 
+        // Check if member is club owner - must transfer ownership first
+        if (member.userId === req.club.userId) {
+            return res.status(400).json({ message: 'Owner must transfer ownership before withdrawing' })
+        }
+
         // Get club to access penalty
         const club = await Club.findByPk(req.club.id);
         if (!club) {
